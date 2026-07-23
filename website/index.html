@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReadBox — читайте и публикуйте</title>
+    <meta name="description" content="ReadBox — публикации, истории и каналы независимых авторов в одном приложении.">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f5f5f5" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
+
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg?v=3">
+    <link rel="icon" href="/images/favicon.ico?v=3" sizes="any">
+    <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png?v=3">
+    <link rel="manifest" href="/images/site.webmanifest?v=3">
+    <link rel="stylesheet" href="/home.css?v=9">
+</head>
+<body>
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="ReadBox">
+            <img src="/images/readbox_logo.png" alt="" class="brand-logo">
+            <span>ReadBox</span>
+        </a>
+
+        <a
+          class="header-link"
+          href="https://apps.apple.com/ru/app/readbox-%D1%81%D1%82%D0%B0%D1%82%D1%8C%D0%B8-%D0%B8-%D0%B8%D1%81%D1%82%D0%BE%D1%80%D0%B8%D0%B8/id6745975985"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-i18n="headerButton"
+        >
+            Скачать
+        </a>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow" data-i18n="eyebrow">Чтение без лишнего шума</p>
+                <h1 data-i18n="title">Истории и идеи, к которым хочется вернуться.</h1>
+                <p class="hero-text" data-i18n="subtitle">
+                    Читайте публикации любимых каналов и делитесь собственными мыслями в ReadBox.
+                </p>
+                <a
+                  class="primary-button"
+                  href="https://apps.apple.com/ru/app/readbox-%D1%81%D1%82%D0%B0%D1%82%D1%8C%D0%B8-%D0%B8-%D0%B8%D1%81%D1%82%D0%BE%D1%80%D0%B8%D0%B8/id6745975985"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-i18n="appStore"
+                >
+                    Открыть в App Store
+                </a>
+            </div>
+
+            <div class="hero-mark" aria-hidden="true">
+                <img src="/images/readbox_logo.png" alt="">
+            </div>
+        </section>
+
+        <section id="publications" class="publications" aria-labelledby="publicationsTitle">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow" data-i18n="insideReadBox">Внутри ReadBox</p>
+                    <h2 id="publicationsTitle" data-i18n="publicationsTitle">Публикации для знакомства</h2>
+                </div>
+                <button id="refreshButton" class="refresh-button" type="button" data-i18n="refresh" disabled>
+                    Другие публикации
+                </button>
+            </div>
+
+            <div id="publicationGrid" class="publication-grid" aria-live="polite">
+                <article class="publication-card skeleton" aria-hidden="true"></article>
+                <article class="publication-card skeleton" aria-hidden="true"></article>
+                <article class="publication-card skeleton" aria-hidden="true"></article>
+                <article class="publication-card skeleton" aria-hidden="true"></article>
+                <article class="publication-card skeleton" aria-hidden="true"></article>
+            </div>
+
+            <p id="publicationsStatus" class="status-message hidden"></p>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="footer-identity">
+            <span>© 2026 ReadBox</span>
+            <a class="footer-email" href="mailto:support@ireadbox.ru">support@ireadbox.ru</a>
+        </div>
+        <nav aria-label="Legal">
+            <a href="/privacy.html" data-i18n="privacy">Конфиденциальность</a>
+            <a href="/terms.html" data-i18n="terms">Условия использования</a>
+        </nav>
+    </footer>
+
+    <script src="/home.js?v=5"></script>
+</body>
+</html>

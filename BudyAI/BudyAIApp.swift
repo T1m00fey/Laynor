@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct BudyAIApp: App {
+    init() {
+        LaynorLocalization.syncKeyboardLanguage()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

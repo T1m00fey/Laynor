@@ -1,0 +1,36 @@
+{
+  "fill" : {
+    "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "ChatGPT Image 20 июл_ 2026 г_, 13_19_36-no-bg-preview (carve.photos).png",
+          "name" : "ChatGPT Image 20 июл_ 2026 г_, 13_19_36-no-bg-preview (carve.photos)",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              5,
+              -10
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

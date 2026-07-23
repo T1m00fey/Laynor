@@ -1,0 +1,21 @@
+RewriteEngine On
+RewriteBase /
+
+# Перенаправляем www на основной домен
+RewriteCond %{HTTP_HOST} ^www\.readbox\.online$ [NC]
+RewriteRule ^(.*)$ https://readbox.online/$1 [R=301,L]
+
+# Принудительно переводим HTTP на HTTPS
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+# sitemap
+RewriteRule ^sitemap\.xml$ /sitemap.xml.php [L]
+
+# Не обрабатывать запросы к существующим файлам и папкам
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Всё остальное отправляем на index.html
+RewriteRule ^ index.html [L]

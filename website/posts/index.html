@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReadBox</title>
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)">
+    <link rel="icon" type="image/svg+xml" href="/images/favicon.svg?v=3">
+    <link rel="icon" href="/images/favicon.ico?v=3" sizes="any">
+    <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon.png?v=3">
+    <link rel="manifest" href="/images/site.webmanifest?v=3">
+    <link rel="stylesheet" href="/posts/post.css?v=34">
+</head>
+<body>
+    <main class="page">
+        <a class="brand" href="/">
+            <img src="/images/readbox_logo.png" alt="ReadBox" class="brand-logo">
+            <span class="brand-name">ReadBox</span>
+        </a>
+
+        <section id="loadingState" class="state-card">
+            <div class="spinner"></div>
+            <p>Загружаем публикацию...</p>
+        </section>
+
+        <section id="errorState" class="state-card hidden">
+            <h1>Публикация недоступна</h1>
+            <p id="errorText">Не удалось открыть пост.</p>
+            <a
+              class="app-button"
+              href="https://apps.apple.com/ru/app/readbox-%D1%81%D1%82%D0%B0%D1%82%D1%8C%D0%B8-%D0%B8-%D0%B8-%D0%B8%D1%81%D1%82%D0%BE%D1%80%D0%B8%D0%B8/id6745975985"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Открыть App Store
+            </a>
+        </section>
+
+        <article id="postView" class="post hidden">
+            <header class="post-header">
+                <div class="author-row">
+                    <div id="authorAvatar" class="author-avatar">R</div>
+
+                    <div class="author-meta">
+                        <div class="author-name-row">
+                            <span id="authorName" class="author-name">ReadBox author</span>
+                            <img id="checkmark" class="checkmark hidden" src="/images/checkmark.webp" alt="Verified">
+                        </div>
+
+                        <div class="meta-row">
+                            <span id="postType" class="meta-badge">ARTICLE</span>
+                            <span id="postDate" class="meta-date"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <h1 id="postTitle" class="post-title"></h1>
+            </header>
+
+            <section id="heroMedia" class="hero-media hidden"></section>
+
+            <section id="postContent" class="post-content"></section>
+
+            <footer class="post-footer">
+                <a
+                  class="app-button"
+                  href="https://apps.apple.com/ru/app/readbox-%D1%81%D1%82%D0%B0%D1%82%D1%8C%D0%B8-%D0%B8-%D0%B8-%D0%B8%D1%81%D1%82%D0%BE%D1%80%D0%B8%D0%B8/id6745975985"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Читать в приложении
+                </a>
+            </footer>
+        </article>
+    </main>
+
+    <script src="/posts/post.js?v=24"></script>
+</body>
+</html>

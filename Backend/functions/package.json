@@ -1,0 +1,19 @@
+{
+  "name": "budy-functions",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions:budy:budyRewrite,functions:budy:budyFeedback",
+    "logs": "firebase functions:log --only budyRewrite"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^7.0.0"
+  }
+}
