@@ -45,6 +45,7 @@ function loadModuleForTests() {
 
 const moduleContext = loadModuleForTests();
 const safeResult = moduleContext.safeProofreadingResult;
+const parseReminderOutput = moduleContext.parseReminderOutput;
 
 test("allows punctuation and an obvious one-letter typo", () => {
   assert.equal(
@@ -101,4 +102,40 @@ test("stores valid feedback without keyboard content metadata", async () => {
   assert.equal(moduleContext.feedbackDocuments[0].status, "new");
   assert.equal(Object.hasOwn(moduleContext.feedbackDocuments[0], "build"), false);
   assert.equal(Object.hasOwn(moduleContext.feedbackDocuments[0], "keyboardText"), false);
+});
+
+test("accepts a valid future reminder response", () => {
+  const now = new Date("2026-07-23T08:00:00.000Z");
+  assert.deepEqual(
+    parseReminderOutput(
+      '{"title":"Отправить договор","fireDate":"2026-07-24T18:00:00+04:00","needsClarification":false}',
+      now,
+    ),
+    {
+      needsClarification: false,
+      title: "Отправить договор",
+      fireDate: "2026-07-24T14:00:00.000Z",
+    },
+  );
+});
+
+test("rejects reminder dates in the past", () => {
+  const now = new Date("2026-07-23T08:00:00.000Z");
+  assert.equal(
+    parseReminderOutput(
+      '{"title":"Отправить договор","fireDate":"2026-07-22T18:00:00+04:00","needsClarification":false}',
+      now,
+    ),
+    null,
+  );
+});
+
+test("preserves the clarification response", () => {
+  assert.deepEqual(
+    parseReminderOutput(
+      '{"title":"","fireDate":"","needsClarification":true}',
+      new Date("2026-07-23T08:00:00.000Z"),
+    ),
+    { needsClarification: true },
+  );
 });
