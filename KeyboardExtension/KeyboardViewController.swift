@@ -20,6 +20,11 @@ final class KeyboardViewController: KeyboardInputViewController {
     private let editHistory = KeyboardEditHistory()
     private let commandContext = KeyboardCommandContext()
     private let interactionContext = KeyboardInteractionContext()
+    // Resolve shared preferences while the extension is being created, not
+    // from a toolbar tap. If the keyboard is visible, these values are ready
+    // and confirming a reminder performs no App Group I/O.
+    private let installationId = LaynorInstallation.identifier
+    private let reminderLeadMinutes = LaynorReminderCenter.leadMinutes
     private var rewriteTransaction: RewriteTransaction?
     private var configuredKeyboardLanguageCode: String?
 
@@ -91,8 +96,29 @@ final class KeyboardViewController: KeyboardInputViewController {
                 onRewrite: { [weak self] style in
                     await self?.rewrite(style: style)
                 },
+                onParseReminder: { [weak self] in
+                    guard let self else {
+                        return .failure("keyboard.command.failed".localizedString())
+                    }
+                    return await self.parseReminder()
+                },
+                onScheduleReminder: { [weak self] draft, completion in
+                    guard let self else {
+                        completion(
+                            .failure("keyboard.command.failed".localizedString())
+                        )
+                        return
+                    }
+                    self.createReminder(
+                        from: draft,
+                        completion: completion
+                    )
+                },
                 onUndo: { [weak self] in self?.undoRewrite() },
-                onRedo: { [weak self] in self?.redoRewrite() }
+                onRedo: { [weak self] in self?.redoRewrite() },
+                onInsertSavedItem: { [weak self] item in
+                    self?.insertText(item.value)
+                }
             )
         }
     }
@@ -115,6 +141,77 @@ final class KeyboardViewController: KeyboardInputViewController {
                 instruction: trimmedInstruction
             )
         }
+    }
+
+    private func parseReminder() async -> KeyboardReminderParseResult {
+        guard hasFullAccess else {
+            return .failure("keyboard.error.enable_full_access".localizedString())
+        }
+        guard let source = currentSourceText() else {
+            return .failure("keyboard.error.enter_or_select_text".localizedString())
+        }
+
+        do {
+            return .success(
+                try await KeyboardRewriteService().parseReminder(source)
+            )
+        } catch {
+            return .failure(error.localizedDescription)
+        }
+    }
+
+    private func createReminder(
+        from draft: LaynorReminderDraft,
+        completion: @escaping (KeyboardReminderScheduleResult) -> Void
+    ) {
+        guard draft.fireDate.timeIntervalSinceNow >= 5 else {
+            completion(
+                .failure(LaynorReminderError.invalidDate.localizedDescription)
+            )
+            return
+        }
+
+        let preferredNotificationDate = draft.fireDate.addingTimeInterval(
+            -TimeInterval(reminderLeadMinutes * 60)
+        )
+        let reminder = LaynorReminder(
+            id: UUID(),
+            title: draft.title,
+            fireDate: max(
+                preferredNotificationDate,
+                Date().addingTimeInterval(5)
+            ),
+            eventDate: draft.fireDate,
+            createdAt: Date()
+        )
+
+        KeyboardRewriteService().createServerReminder(
+            reminder,
+            installationId: installationId
+        ) { result in
+            switch result {
+            case .success:
+                completion(.success)
+            case .failure(let error):
+                completion(.failure(error.localizedDescription))
+            }
+        }
+    }
+
+    private func currentSourceText() -> String? {
+        if let selected = textDocumentProxy.selectedText,
+           !selected.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return selected
+        }
+
+        guard let context = textDocumentProxy.documentContextBeforeInput else {
+            return nil
+        }
+        let paragraph = context.components(separatedBy: .newlines).last ?? context
+        let source = String(paragraph.suffix(1500))
+        return source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? nil
+            : source
     }
 
     private func rewrite(
@@ -285,6 +382,10 @@ final class KeyboardViewController: KeyboardInputViewController {
 nonisolated private final class BudyKeyboardActionHandler: StandardKeyboardActionHandler {
     private let commandContext: KeyboardCommandContext
     private let interactionContext: KeyboardInteractionContext
+    // KeyboardKit can restore a key's pressed state while the extension is
+    // being mounted. Feedback is only valid while an actual gesture is being
+    // handled; this gate prevents sounds or haptics from firing on launch.
+    private var isHandlingGesture = false
 
     init(
         controller: any KeyboardController,
@@ -321,7 +422,42 @@ nonisolated private final class BudyKeyboardActionHandler: StandardKeyboardActio
         }
     }
 
+    override func handle(_ suggestion: AutocompleteSuggestion) {
+        let languageCode = LaynorPersonalDictionary.languageCode(
+            for: keyboardContext.locale
+        )
+        let currentWord = currentDocumentContextBeforeInput?.trailingAutocompleteWord ?? ""
+        let selectedWord = suggestion.text.trailingAutocompleteWord
+        let selectedCurrentWord = !currentWord.isEmpty
+            && selectedWord.compare(
+                currentWord,
+                options: [.caseInsensitive, .diacriticInsensitive],
+                range: nil,
+                locale: keyboardContext.locale
+            ) == .orderedSame
+
+        if suggestion.isRegular, selectedCurrentWord {
+            LaynorPersonalDictionary.learn(
+                currentWord,
+                languageCode: languageCode
+            )
+        } else if LaynorPersonalDictionary.contains(
+            selectedWord,
+            languageCode: languageCode
+        ) {
+            LaynorPersonalDictionary.recordSelection(
+                of: selectedWord,
+                languageCode: languageCode
+            )
+        }
+
+        super.handle(suggestion)
+    }
+
     override func handle(_ gesture: Keyboard.Gesture, on action: KeyboardAction) {
+        isHandlingGesture = true
+        defer { isHandlingGesture = false }
+
         if action == .backspace {
             switch gesture {
             case .repeatPress:
@@ -355,6 +491,16 @@ nonisolated private final class BudyKeyboardActionHandler: StandardKeyboardActio
         default:
             break
         }
+    }
+
+    override func triggerAudioFeedback(_ feedback: KeyboardAudioFeedback) {
+        guard isHandlingGesture else { return }
+        super.triggerAudioFeedback(feedback)
+    }
+
+    override func triggerHapticFeedback(_ feedback: KeyboardHapticFeedback) {
+        guard isHandlingGesture else { return }
+        super.triggerHapticFeedback(feedback)
     }
 
     override func shouldApplyAutocorrectSuggestion(
@@ -592,6 +738,11 @@ nonisolated private extension Keyboard.InputType {
 
 nonisolated private final class BudyStandardAutocompleteService: StandardAutocompleteService {
     override func shouldAutocorrect(_ word: String) -> Bool {
+        let languageCode = LaynorPersonalDictionary.languageCode(for: locale)
+        if LaynorPersonalDictionary.contains(word, languageCode: languageCode) {
+            return false
+        }
+
         guard BudyAutocorrectionPolicy.allowsAutocorrect(
             inputType: keyboardContext.keyboardInputType,
             textBeforeCursor: word,
@@ -599,6 +750,17 @@ nonisolated private final class BudyStandardAutocompleteService: StandardAutocom
         ) else { return false }
 
         return super.shouldAutocorrect(word)
+    }
+
+    override func autocompleteSuggestions(
+        for text: String
+    ) async throws -> [AutocompleteSuggestion] {
+        let suggestions = try await super.autocompleteSuggestions(for: text)
+        return BudyPersonalAutocomplete.merge(
+            suggestions,
+            for: text.trailingAutocompleteWord,
+            locale: locale
+        )
     }
 
     override func nextWordPredictionResult(for text: String) async throws -> AutocompleteResult? {
@@ -702,7 +864,88 @@ nonisolated private final class BudyAutocompleteService: AutocompleteService {
             )
         }
 
-        return result
+        return BudyPersonalAutocomplete.merge(
+            result,
+            for: word,
+            locale: Locale(identifier: language)
+        )
+    }
+}
+
+nonisolated private enum BudyPersonalAutocomplete {
+    static func merge(
+        _ suggestions: [AutocompleteSuggestion],
+        for input: String,
+        locale: Locale
+    ) -> [AutocompleteSuggestion] {
+        guard !input.isEmpty else { return suggestions }
+        let languageCode = LaynorPersonalDictionary.languageCode(for: locale)
+        let personalWords = LaynorPersonalDictionary.suggestions(
+            for: input,
+            languageCode: languageCode,
+            limit: 3
+        )
+        let inputKey = normalized(input, locale: locale)
+        let isKnownWord = LaynorPersonalDictionary.contains(
+            input,
+            languageCode: languageCode
+        )
+
+        var baseSuggestions = suggestions
+        if isKnownWord {
+            baseSuggestions.removeAll(where: \.isAutocorrect)
+        }
+
+        var merged: [AutocompleteSuggestion] = []
+        var used = Set<String>()
+
+        if let original = baseSuggestions.first(where: {
+            normalized($0.text.trailingAutocompleteWord, locale: locale) == inputKey
+        }) {
+            append(original, to: &merged, used: &used, locale: locale)
+        }
+
+        for entry in personalWords {
+            let candidateKey = normalized(entry.word, locale: locale)
+            guard candidateKey != inputKey else { continue }
+            let type: AutocompleteSuggestionType = LaynorPersonalDictionary
+                .isConfidentAutocorrection(entry, for: input)
+                ? .autocorrect
+                : .regular
+            append(
+                AutocompleteSuggestion(
+                    text: entry.word,
+                    type: type,
+                    source: input,
+                    additionalInfo: ["laynorPersonalWord": entry.id.uuidString]
+                ),
+                to: &merged,
+                used: &used,
+                locale: locale
+            )
+        }
+
+        for suggestion in baseSuggestions {
+            append(suggestion, to: &merged, used: &used, locale: locale)
+        }
+
+        return Array(merged.prefix(3))
+    }
+
+    private static func append(
+        _ suggestion: AutocompleteSuggestion,
+        to result: inout [AutocompleteSuggestion],
+        used: inout Set<String>,
+        locale: Locale
+    ) {
+        let key = normalized(suggestion.text, locale: locale)
+        guard !key.isEmpty, used.insert(key).inserted else { return }
+        result.append(suggestion)
+    }
+
+    private static func normalized(_ value: String, locale: Locale) -> String {
+        value.folding(options: [.diacriticInsensitive], locale: locale)
+            .lowercased(with: locale)
     }
 }
 
@@ -813,6 +1056,7 @@ private extension KeyboardApp {
     static var laynor: KeyboardApp {
         .init(
             name: "Laynor",
+            appGroupId: "group.Tim.BudyAI",
             locales: [
                 Locale(identifier: "ru_RU"),
                 Locale(identifier: "en_US"),

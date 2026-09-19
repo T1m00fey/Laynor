@@ -7,6 +7,16 @@ enum KeyboardRewriteResult {
     case failure(String)
 }
 
+enum KeyboardReminderParseResult {
+    case success(LaynorReminderDraft)
+    case failure(String)
+}
+
+enum KeyboardReminderScheduleResult {
+    case success
+    case failure(String)
+}
+
 nonisolated final class KeyboardCommandContext: ObservableObject {
     private enum SubmissionState {
         case idle
@@ -174,9 +184,16 @@ struct BudyKeyboardView: View {
     let commandContext: KeyboardCommandContext
     let interactionContext: KeyboardInteractionContext
     let onRewrite: (KeyboardRewriteStyle) async -> KeyboardRewriteResult?
+    let onParseReminder: () async -> KeyboardReminderParseResult
+    let onScheduleReminder: (
+        LaynorReminderDraft,
+        @escaping (KeyboardReminderScheduleResult) -> Void
+    ) -> Void
     let onUndo: () -> Void
     let onRedo: () -> Void
+    let onInsertSavedItem: (LaynorSavedItem) -> Void
 
+    @State private var isShowingSavedItems = false
     @ObservedObject private var keyboardContext: KeyboardContext
 
     init(
@@ -186,8 +203,14 @@ struct BudyKeyboardView: View {
         commandContext: KeyboardCommandContext,
         interactionContext: KeyboardInteractionContext,
         onRewrite: @escaping (KeyboardRewriteStyle) async -> KeyboardRewriteResult?,
+        onParseReminder: @escaping () async -> KeyboardReminderParseResult,
+        onScheduleReminder: @escaping (
+            LaynorReminderDraft,
+            @escaping (KeyboardReminderScheduleResult) -> Void
+        ) -> Void,
         onUndo: @escaping () -> Void,
-        onRedo: @escaping () -> Void
+        onRedo: @escaping () -> Void,
+        onInsertSavedItem: @escaping (LaynorSavedItem) -> Void
     ) {
         self.services = services
         self.state = state
@@ -195,12 +218,32 @@ struct BudyKeyboardView: View {
         self.commandContext = commandContext
         self.interactionContext = interactionContext
         self.onRewrite = onRewrite
+        self.onParseReminder = onParseReminder
+        self.onScheduleReminder = onScheduleReminder
         self.onUndo = onUndo
         self.onRedo = onRedo
+        self.onInsertSavedItem = onInsertSavedItem
         _keyboardContext = ObservedObject(wrappedValue: state.keyboardContext)
     }
 
     var body: some View {
+        ZStack(alignment: .top) {
+            // Keep the regular keyboard in the layout so switching to a
+            // short saved-items list cannot reduce the extension height.
+            keyboardBody
+                .opacity(isShowingSavedItems ? 0 : 1)
+                .allowsHitTesting(!isShowingSavedItems)
+
+            if isShowingSavedItems {
+                SavedItemsKeyboardView(
+                    onClose: { isShowingSavedItems = false },
+                    onInsert: onInsertSavedItem
+                )
+            }
+        }
+    }
+
+    private var keyboardBody: some View {
         KeyboardView(
             layout: keyboardLayout,
             services: services,
@@ -211,6 +254,7 @@ struct BudyKeyboardView: View {
                 // rendered key and its press feedback.
                 params.view
                     .hidden()
+                    .allowsHitTesting(false)
                     .overlay {
                         BudyFastKeyboardButton(
                             item: params.item,
@@ -233,8 +277,11 @@ struct BudyKeyboardView: View {
                     services: services,
                     autocompleteAction: params.autocompleteAction,
                     onRewrite: onRewrite,
+                    onParseReminder: onParseReminder,
+                    onScheduleReminder: onScheduleReminder,
                     onUndo: onUndo,
-                    onRedo: onRedo
+                    onRedo: onRedo,
+                    onToggleSavedItems: { isShowingSavedItems = true }
                 )
             }
         )
@@ -519,6 +566,93 @@ private let spanishCalloutVariants: [String: [String]] = [
     "u": ["u", "ú", "ü"]
 ]
 
+private struct SavedItemsKeyboardView: View {
+    let onClose: () -> Void
+    let onInsert: (LaynorSavedItem) -> Void
+
+    @State private var items: [LaynorSavedItem] = []
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("keyboard.saved.title".localizedString())
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "keyboard")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 38, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("keyboard.saved.close".localizedString())
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+
+            if items.isEmpty {
+                ContentUnavailableView(
+                    "keyboard.saved.empty.title".localizedString(),
+                    systemImage: "bookmark",
+                    description: Text("keyboard.saved.empty.subtitle".localizedString())
+                )
+            } else {
+                ScrollView {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 145), spacing: 8)],
+                        spacing: 8
+                    ) {
+                        ForEach(items) { item in
+                            Button {
+                                LaynorSavedItemsStore.recordSelection(item)
+                                onInsert(item)
+                            } label: {
+                                HStack(spacing: 9) {
+                                    Image(systemName: item.kind.icon)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 20)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(item.title.isEmpty ? item.value : item.title)
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .lineLimit(1)
+                                        if !item.title.isEmpty {
+                                            Text(item.value)
+                                                .font(.system(size: 11))
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .frame(height: 50)
+                                .background(
+                                    Color(uiColor: .systemBackground).opacity(0.48),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .foregroundStyle(.primary)
+        .onAppear(perform: refresh)
+        .onReceive(NotificationCenter.default.publisher(for: .laynorSavedItemsDidChange)) { _ in
+            refresh()
+        }
+    }
+
+    private func refresh() {
+        items = LaynorSavedItemsStore.all()
+    }
+}
+
 private struct BudyToolbar: View {
     @ObservedObject var keyboardContext: KeyboardContext
     @ObservedObject var autocompleteContext: AutocompleteContext
@@ -528,20 +662,32 @@ private struct BudyToolbar: View {
     let services: KeyboardServices
     let autocompleteAction: (AutocompleteSuggestion) -> Void
     let onRewrite: (KeyboardRewriteStyle) async -> KeyboardRewriteResult?
+    let onParseReminder: () async -> KeyboardReminderParseResult
+    let onScheduleReminder: (
+        LaynorReminderDraft,
+        @escaping (KeyboardReminderScheduleResult) -> Void
+    ) -> Void
     let onUndo: () -> Void
     let onRedo: () -> Void
+    let onToggleSavedItems: () -> Void
 
     @State private var isShowingAI = false
     @State private var isRewriting = false
     @State private var selectedStyle: KeyboardRewriteStyle?
     @State private var message: String?
     @State private var isSuccessMessage = false
+    @State private var reminderDraft: LaynorReminderDraft?
+    @State private var isPreparingReminder = false
+    @State private var isSchedulingReminder = false
     @State private var toolbarShakeProgress: CGFloat = 0
     @State private var isCommandCursorVisible = true
 
     var body: some View {
         ZStack {
-            if commandContext.isActive {
+            if let reminderDraft {
+                reminderConfirmation(reminderDraft)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if commandContext.isActive {
                 commandInput
                     .transition(
                         .asymmetric(
@@ -557,6 +703,7 @@ private struct BudyToolbar: View {
                 HStack(spacing: 7) {
                     brandButton
                     historyButtons
+                    savedItemsButton
 
                     ZStack(alignment: .leading) {
                         if canShowT9 {
@@ -598,7 +745,7 @@ private struct BudyToolbar: View {
                     .modifier(BudyToolbarShakeEffect(progress: toolbarShakeProgress))
                     .animation(.easeInOut(duration: 0.24), value: canShowT9)
 
-                    if isRewriting {
+                    if isRewriting || isPreparingReminder {
                         ProgressView()
                             .controlSize(.small)
                             .frame(width: 22)
@@ -618,7 +765,7 @@ private struct BudyToolbar: View {
         }
         .animation(
             .spring(response: 0.34, dampingFraction: 0.86),
-            value: commandContext.isActive
+            value: commandContext.isActive || reminderDraft != nil
         )
         .padding(.horizontal, 8)
         // A real 40pt container gives the 30pt controls 5pt of breathing room
@@ -626,6 +773,70 @@ private struct BudyToolbar: View {
         // toolbar to its declared height.
         .frame(height: 40, alignment: .center)
         .offset(y: 1)
+    }
+
+    private func reminderConfirmation(_ draft: LaynorReminderDraft) -> some View {
+        HStack(spacing: 7) {
+            Button {
+                guard !isSchedulingReminder else { return }
+                reminderDraft = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .frame(width: 34, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isSchedulingReminder)
+            .accessibilityLabel("keyboard.reminder.cancel".localizedString())
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(draft.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Text(reminderDateText(draft.fireDate))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(toolbarCapsule)
+
+            Group {
+                if isSchedulingReminder {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white)
+                } else {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+                .frame(width: 30, height: 30)
+                .background(Color.black.opacity(0.9), in: Circle())
+                .contentShape(Circle())
+                // This intentionally isn't a SwiftUI Button. In several host
+                // apps its button gesture was forwarded into KeyboardKit and
+                // iOS replaced the extension with the system keyboard.
+                .onTapGesture {
+                    confirmReminder(draft)
+                }
+                .accessibilityElement()
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel("keyboard.reminder.confirm".localizedString())
+        }
+        .padding(.horizontal, 8)
+    }
+
+    private func reminderDateText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = keyboardContext.locale
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     private var commandInput: some View {
@@ -808,6 +1019,18 @@ private struct BudyToolbar: View {
             : "keyboard.accessibility.show_tools".localizedString()
     }
 
+    private var savedItemsButton: some View {
+        Button(action: onToggleSavedItems) {
+            Image(systemName: "bookmark")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 30, height: 30)
+                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .background(toolbarCapsule)
+        .accessibilityLabel("keyboard.saved.open".localizedString())
+    }
+
     private var historyButtons: some View {
         HStack(spacing: 0) {
             historyButton(
@@ -962,7 +1185,7 @@ private struct BudyToolbar: View {
                 .foregroundStyle(.primary)
                 .background(toolbarCapsule)
                 .buttonStyle(.plain)
-                .disabled(isRewriting)
+                .disabled(isRewriting || isPreparingReminder)
 
                 ForEach(KeyboardRewriteStyle.allCases) { style in
                     Button {
@@ -977,7 +1200,7 @@ private struct BudyToolbar: View {
                     .foregroundStyle(.primary)
                     .background(toolbarCapsule)
                     .buttonStyle(.plain)
-                    .disabled(isRewriting)
+                    .disabled(isRewriting || isPreparingReminder)
                 }
             }
         }
@@ -1032,6 +1255,83 @@ private struct BudyToolbar: View {
                 selectedStyle = nil
                 isRewriting = false
                 break
+            }
+        }
+    }
+
+    private func prepareReminder() {
+        guard !isPreparingReminder, !isRewriting else { return }
+        isPreparingReminder = true
+        message = nil
+        isSuccessMessage = false
+
+        Task { @MainActor in
+            let result = await onParseReminder()
+            isPreparingReminder = false
+
+            switch result {
+            case .success(let draft):
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                    reminderDraft = draft
+                }
+            case .failure(let error):
+                showReminderError(error)
+            }
+        }
+    }
+
+    private func confirmReminder(_ draft: LaynorReminderDraft) {
+        guard !isSchedulingReminder else { return }
+        isSchedulingReminder = true
+
+        onScheduleReminder(draft) { result in
+            DispatchQueue.main.async {
+                finishReminderConfirmation(with: result)
+            }
+        }
+    }
+
+    @MainActor
+    private func finishReminderConfirmation(
+        with result: KeyboardReminderScheduleResult
+    ) {
+        isSchedulingReminder = false
+
+        guard case .success = result else {
+            if case .failure(let error) = result {
+                showReminderError(error)
+            }
+            return
+        }
+
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            reminderDraft = nil
+            isSuccessMessage = true
+            message = "keyboard.reminder.scheduled".localizedString()
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1_350))
+            withAnimation(.easeOut(duration: 0.28)) {
+                message = nil
+            }
+            try? await Task.sleep(for: .milliseconds(300))
+            isSuccessMessage = false
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+                isShowingAI = false
+            }
+        }
+    }
+
+    private func showReminderError(_ error: String) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isSuccessMessage = false
+            message = error
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeOut(duration: 0.22)) {
+                message = nil
             }
         }
     }

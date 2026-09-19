@@ -190,7 +190,7 @@ enum FeedbackType: String, CaseIterable, Identifiable, Codable {
 }
 
 struct FeedbackService {
-    func submit(type: FeedbackType, message: String, contact: String) async throws {
+    func submit(type: FeedbackType, message: String) async throws {
         guard let url = URL(string: BudyConfiguration.feedbackURL) else {
             throw FeedbackError.invalidURL
         }
@@ -199,7 +199,6 @@ struct FeedbackService {
         let payload = FeedbackRequest(
             type: type.rawValue,
             message: message,
-            contact: contact.isEmpty ? nil : contact,
             locale: LaynorLocalization.appLanguageCode,
             appVersion: version
         )
@@ -225,7 +224,6 @@ struct FeedbackService {
 private struct FeedbackRequest: Encodable {
     let type: String
     let message: String
-    let contact: String?
     let locale: String
     let appVersion: String
 }

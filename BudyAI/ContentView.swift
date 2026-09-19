@@ -1,22 +1,13 @@
 import SwiftUI
 import UIKit
 
-struct ContentView: View {
+struct HomeView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
-    @State private var draft = "home.sample_text".localizedString()
-    @State private var result = ""
-    @State private var selectedStyle: RewriteStyle = .rewrite
-    @State private var isRewriting = false
-    @State private var errorMessage: String?
-    @State private var isShowingSettings = false
     @State private var isShowingOnboarding = false
     @State private var isShowingSetupSheet = false
     @State private var isShowingFeedback = false
-    @State private var didCopy = false
-    @FocusState private var isDraftFocused: Bool
-
-    private let service = RewriteService()
+    @State private var isShowingSupportAccess = false
 
     var body: some View {
         NavigationStack {
@@ -25,14 +16,13 @@ struct ContentView: View {
                     hero
                     activationCard
                     functionsOverview
-                    playground
+                    supportCard
                     feedbackCard
                     ReadboxCredit()
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 28)
             }
-            .scrollDismissesKeyboard(.interactively)
             .background(BudyTheme.background.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -41,28 +31,18 @@ struct ContentView: View {
 //                        Text("Laynor")
 //                            .font(.system(size: 19, weight: .bold, design: .rounded))
                     }
-                }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isShowingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(BudyTheme.ink)
-                            .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+                    .onLongPressGesture(minimumDuration: 0.8) {
+                        isShowingSupportAccess = true
                     }
-                    .accessibilityLabel("common.settings".localizedString())
                 }
 
             }
-            .sheet(isPresented: $isShowingSettings) {
-                SettingsView {
-                    isShowingSettings = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                        isShowingSetupSheet = true
-                    }
-                }
+            .sheet(isPresented: $isShowingSupportAccess) {
+                SupportAccessView()
+                    .presentationDetents([.height(330)])
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(26)
             }
             .sheet(isPresented: $isShowingSetupSheet) {
                 KeyboardSetupSheet {
@@ -84,21 +64,12 @@ struct ContentView: View {
                     isShowingOnboarding = false
                 }
             }
-            .alert("home.error.processing".localizedString(), isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { if !$0 { errorMessage = nil } }
-            )) {
-                Button("common.ok".localizedString(), role: .cancel) {}
-            } message: {
-                Text(errorMessage ?? "common.try_again".localizedString())
-            }
             .onAppear {
                 LaynorLocalization.syncKeyboardLanguage()
                 guard !hasCompletedOnboarding else { return }
                 isShowingOnboarding = true
             }
         }
-        .dismissKeyboardOnOutsideTap()
         .tint(BudyTheme.accentDark)
     }
 
@@ -161,81 +132,6 @@ struct ContentView: View {
         .background(BudyTheme.primaryAction, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
-    private var playground: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("home.try.title".localizedString())
-                        .font(.system(size: 21, weight: .bold, design: .rounded))
-                    Text("home.try.subtitle".localizedString())
-                        .font(.system(size: 13))
-                        .foregroundStyle(BudyTheme.secondaryInk)
-                }
-            }
-
-            ZStack(alignment: .topLeading) {
-                if draft.isEmpty {
-                    Text("home.try.placeholder".localizedString())
-                        .font(.system(size: 16))
-                        .foregroundStyle(BudyTheme.secondaryInk.opacity(0.65))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 17)
-                }
-
-                TextEditor(text: $draft)
-                    .focused($isDraftFocused)
-                    .font(.system(size: 16))
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 112)
-                    .padding(11)
-            }
-            .background(BudyTheme.field, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(RewriteStyle.allCases) { style in
-                        StylePill(style: style, isSelected: selectedStyle == style) {
-                            withAnimation(.easeOut(duration: 0.18)) {
-                                selectedStyle = style
-                            }
-                        }
-                    }
-                }
-            }
-            .contentMargins(.horizontal, 1)
-
-            Button(action: rewrite) {
-                HStack(spacing: 9) {
-                    if isRewriting {
-                        ProgressView().tint(BudyTheme.onPrimaryAction)
-                    } else {
-                        Image(systemName: "sparkles")
-                    }
-                    Text(isRewriting ? "common.processing".localizedString() : selectedStyle.actionTitle)
-                }
-                .font(.system(size: 16, weight: .bold))
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
-                .foregroundStyle(BudyTheme.onPrimaryAction)
-                .background(BudyTheme.primaryAction, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(ProductPressStyle())
-            .disabled(isRewriting || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.48 : 1)
-
-            if !result.isEmpty {
-                resultCard
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .padding(17)
-        .background(BudyTheme.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(BudyTheme.border, lineWidth: 1)
-        }
-    }
-
     private var functionsOverview: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
@@ -247,14 +143,31 @@ struct ContentView: View {
             }
 
             VStack(spacing: 0) {
-                ForEach(Array(RewriteStyle.allCases.enumerated()), id: \.element.id) { index, style in
-                    FunctionDescriptionRow(style: style)
+                ForEach(RewriteStyle.allCases) { style in
+                    CapabilityDescriptionRow(
+                        icon: style.icon,
+                        title: style.title,
+                        description: style.explanation
+                    )
 
-                    if index < RewriteStyle.allCases.count - 1 {
-                        Divider()
-                            .padding(.leading, 48)
-                    }
+                    Divider()
+                        .padding(.leading, 48)
                 }
+
+                CapabilityDescriptionRow(
+                    icon: "bell.badge.fill",
+                    title: "home.notifications.title".localizedString(),
+                    description: "home.notifications.description".localizedString()
+                )
+
+                Divider()
+                    .padding(.leading, 48)
+
+                CapabilityDescriptionRow(
+                    icon: "text.book.closed.fill",
+                    title: "home.dictionary.title".localizedString(),
+                    description: "home.dictionary.description".localizedString()
+                )
             }
             .padding(.horizontal, 14)
             .background(BudyTheme.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -271,7 +184,7 @@ struct ContentView: View {
             isShowingFeedback = true
         } label: {
             HStack(spacing: 13) {
-                Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                Image(systemName: "lightbulb.fill")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(BudyTheme.accentDark)
                     .frame(width: 42, height: 42)
@@ -305,58 +218,43 @@ struct ContentView: View {
         .buttonStyle(ProductPressStyle())
     }
 
-    private var resultCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label("home.result.title".localizedString(), systemImage: "checkmark.circle.fill")
+    private var supportCard: some View {
+        Button {
+            NotificationCenter.default.post(name: .laynorOpenSupport, object: nil)
+        } label: {
+            HStack(spacing: 13) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(BudyTheme.accentDark)
+                    .frame(width: 42, height: 42)
+                    .background(BudyTheme.accentSoft, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("home.support.title".localizedString())
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundStyle(BudyTheme.ink)
+                    Text("home.support.subtitle".localizedString())
+                        .font(.system(size: 12))
+                        .foregroundStyle(BudyTheme.secondaryInk)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "arrow.right")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(BudyTheme.accentDark)
-                Spacer()
-                Button {
-                    UIPasteboard.general.string = result
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    withAnimation(.easeOut(duration: 0.15)) { didCopy = true }
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(1.2))
-                        withAnimation(.easeOut(duration: 0.15)) { didCopy = false }
-                    }
-                } label: {
-                    Label(
-                        didCopy ? "home.result.copied".localizedString() : "home.result.copy".localizedString(),
-                        systemImage: didCopy ? "checkmark" : "doc.on.doc"
-                    )
-                        .font(.system(size: 12, weight: .semibold))
-                }
             }
-
-            Text(result)
-                .font(.system(size: 16))
-                .foregroundStyle(BudyTheme.ink)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(16)
-        .background(BudyTheme.accentSoft, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-    }
-
-    private func rewrite() {
-        let source = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !source.isEmpty else { return }
-        isDraftFocused = false
-        isRewriting = true
-        didCopy = false
-
-        Task {
-            do {
-                let rewritten = try await service.rewrite(source, style: selectedStyle)
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
-                    result = rewritten
-                }
-            } catch {
-                errorMessage = error.localizedDescription
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(BudyTheme.surface, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 19, style: .continuous)
+                    .stroke(BudyTheme.border)
             }
-            isRewriting = false
+            .contentShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
         }
+        .buttonStyle(ProductPressStyle())
     }
 
     private func openAppSettings() {
@@ -365,7 +263,7 @@ struct ContentView: View {
     }
 }
 
-private struct KeyboardSetupSheet: View {
+struct KeyboardSetupSheet: View {
     let openSettings: () -> Void
 
     var body: some View {
@@ -762,40 +660,24 @@ private struct BrandMark: View {
     }
 }
 
-private struct StylePill: View {
-    let style: RewriteStyle
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Label(style.title, systemImage: style.icon)
-                .font(.system(size: 13, weight: .semibold))
-                .padding(.horizontal, 12)
-                .frame(height: 36)
-                .foregroundStyle(isSelected ? Color.white : BudyTheme.ink)
-                .background(isSelected ? BudyTheme.accentDark : BudyTheme.field, in: Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct FunctionDescriptionRow: View {
-    let style: RewriteStyle
+private struct CapabilityDescriptionRow: View {
+    let icon: String
+    let title: String
+    let description: String
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: style.icon)
+            Image(systemName: icon)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(BudyTheme.accentDark)
                 .frame(width: 36, height: 36)
                 .background(BudyTheme.accentSoft, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(style.title)
+                Text(title)
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(BudyTheme.ink)
-                Text(style.explanation)
+                Text(description)
                     .font(.system(size: 13))
                     .foregroundStyle(BudyTheme.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)

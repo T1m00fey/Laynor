@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		C484D70A3008000000190BF4 /* KeyboardExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = C484D7003008000000190BF4 /* KeyboardExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C484D71B3008B9FF00190BF4 /* KeyboardKit in Frameworks */ = {isa = PBXBuildFile; productRef = C484D71A3008B9FF00190BF4 /* KeyboardKit */; };
+		D1F10003300F000000000003 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = D1F10001300F000000000001 /* FirebaseCore */; };
+		D1F10004300F000000000004 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = D1F10002300F000000000002 /* FirebaseMessaging */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -77,6 +79,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				C484D71B3008B9FF00190BF4 /* KeyboardKit in Frameworks */,
+				D1F10003300F000000000003 /* FirebaseCore in Frameworks */,
+				D1F10004300F000000000004 /* FirebaseMessaging in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +137,8 @@
 			name = BudyAI;
 			packageProductDependencies = (
 				C484D71A3008B9FF00190BF4 /* KeyboardKit */,
+				D1F10001300F000000000001 /* FirebaseCore */,
+				D1F10002300F000000000002 /* FirebaseMessaging */,
 			);
 			productName = BudyAI;
 			productReference = C484D6B63007BFC800190BF4 /* BudyAI.app */;
@@ -173,6 +179,11 @@
 				TargetAttributes = {
 					C484D6B53007BFC800190BF4 = {
 						CreatedOnToolsVersion = 26.1.1;
+						SystemCapabilities = {
+							com.apple.Push = {
+								enabled = 1;
+							};
+						};
 					};
 					C484D7063008000000190BF4 = {
 						CreatedOnToolsVersion = 26.1.1;
@@ -192,6 +203,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				C484D7193008B9FF00190BF4 /* XCRemoteSwiftPackageReference "KeyboardKit" */,
+				D1F10000300F000000000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C484D6B73007BFC800190BF4 /* Products */;
@@ -375,7 +387,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = BudyAI/BudyAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = 7PV9N4T7V4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -390,7 +402,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Tim.BudyAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -414,7 +426,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = BudyAI/BudyAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = 7PV9N4T7V4;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -429,7 +441,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = Tim.BudyAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -452,7 +464,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = KeyboardExtension/KeyboardExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = 7PV9N4T7V4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KeyboardExtension/Info.plist;
@@ -481,7 +493,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = KeyboardExtension/KeyboardExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = 7PV9N4T7V4;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KeyboardExtension/Info.plist;
@@ -545,6 +557,14 @@
 				version = 10.7.2;
 			};
 		};
+		D1F10000300F000000000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.14.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -552,6 +572,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C484D7193008B9FF00190BF4 /* XCRemoteSwiftPackageReference "KeyboardKit" */;
 			productName = KeyboardKit;
+		};
+		D1F10001300F000000000001 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1F10000300F000000000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		D1F10002300F000000000002 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1F10000300F000000000000 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

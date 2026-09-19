@@ -8,8 +8,16 @@ struct SettingsView: View {
         "keyboardHapticsEnabled",
         store: UserDefaults(suiteName: "group.Tim.BudyAI")
     ) private var isKeyboardHapticsEnabled = true
-
+    let showsDoneButton: Bool
     let onShowSetup: () -> Void
+
+    init(
+        showsDoneButton: Bool = true,
+        onShowSetup: @escaping () -> Void
+    ) {
+        self.showsDoneButton = showsDoneButton
+        self.onShowSetup = onShowSetup
+    }
 
     @State private var connectionState: ConnectionState = .idle
     @State private var isFeedbackPresented = false
@@ -32,9 +40,11 @@ struct SettingsView: View {
             .navigationTitle("common.settings".localizedString())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("common.done".localizedString()) { dismiss() }
-                        .fontWeight(.semibold)
+                if showsDoneButton {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("common.done".localizedString()) { dismiss() }
+                            .fontWeight(.semibold)
+                    }
                 }
             }
         }
@@ -297,6 +307,70 @@ private struct SettingsRow: View {
     }
 }
 
+private struct SettingsMenuRow<MenuContent: View>: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let subtitle: String
+    let selectionTitle: String
+    let menuContent: MenuContent
+
+    init(
+        icon: String,
+        color: Color,
+        title: String,
+        subtitle: String,
+        selectionTitle: String,
+        @ViewBuilder menuContent: () -> MenuContent
+    ) {
+        self.icon = icon
+        self.color = color
+        self.title = title
+        self.subtitle = subtitle
+        self.selectionTitle = selectionTitle
+        self.menuContent = menuContent()
+    }
+
+    var body: some View {
+        Menu {
+            menuContent
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        color,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(BudyTheme.secondaryInk)
+                }
+
+                Spacer()
+
+                Text(selectionTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(BudyTheme.accentDark)
+                    .padding(.horizontal, 10)
+                    .frame(height: 30)
+                    .background(BudyTheme.accentSoft, in: Capsule())
+            }
+            .foregroundStyle(BudyTheme.ink)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 66)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(ProductSettingsPressStyle())
+    }
+}
+
 private struct SettingsToggleRow: View {
     let icon: String
     let color: Color
@@ -366,14 +440,12 @@ struct FeedbackView: View {
 
     @State private var selectedType: FeedbackType = .suggestion
     @State private var message = ""
-    @State private var contact = ""
     @State private var submissionState: FeedbackSubmissionState = .idle
     @State private var errorMessage = ""
     @State private var showsError = false
     @FocusState private var focusedField: FeedbackField?
 
     private let messageLimit = 2_000
-    private let contactLimit = 200
 
     var body: some View {
         NavigationStack {
@@ -417,6 +489,42 @@ struct FeedbackView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                Button {
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        NotificationCenter.default.post(name: .laynorOpenSupport, object: nil)
+                    }
+                } label: {
+                    HStack(alignment: .top, spacing: 11) {
+                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(BudyTheme.accentDark)
+                            .frame(width: 30, height: 30)
+                            .background(BudyTheme.accentSoft, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("feedback.support.title".localizedString())
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(BudyTheme.ink)
+                            Text("feedback.support.subtitle".localizedString())
+                                .font(.system(size: 12))
+                                .foregroundStyle(BudyTheme.secondaryInk)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(BudyTheme.accentDark)
+                            .padding(.top, 9)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(BudyTheme.accentSoft.opacity(0.55), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
                 feedbackTypePicker
 
                 VStack(alignment: .leading, spacing: 8) {
@@ -453,23 +561,6 @@ struct FeedbackView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    fieldLabel("feedback.contact.title".localizedString())
-                    TextField("feedback.contact.placeholder".localizedString(), text: $contact)
-                        .focused($focusedField, equals: .contact)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.emailAddress)
-                        .font(.system(size: 15))
-                        .padding(.horizontal, 16)
-                        .frame(height: 52)
-                        .background(BudyTheme.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(BudyTheme.border)
-                        }
-                }
-
                 Label("feedback.privacy".localizedString(), systemImage: "lock.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(BudyTheme.secondaryInk)
@@ -501,9 +592,6 @@ struct FeedbackView: View {
         }
         .onChange(of: message) { _, value in
             if value.count > messageLimit { message = String(value.prefix(messageLimit)) }
-        }
-        .onChange(of: contact) { _, value in
-            if value.count > contactLimit { contact = String(value.prefix(contactLimit)) }
         }
     }
 
@@ -584,7 +672,6 @@ struct FeedbackView: View {
 
     private func submit() {
         let cleanMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanContact = contact.trimmingCharacters(in: .whitespacesAndNewlines)
         guard cleanMessage.count >= 3 else { return }
 
         submissionState = .sending
@@ -593,8 +680,7 @@ struct FeedbackView: View {
             do {
                 try await FeedbackService().submit(
                     type: selectedType,
-                    message: cleanMessage,
-                    contact: cleanContact
+                    message: cleanMessage
                 )
                 withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) {
                     submissionState = .sent
@@ -616,5 +702,4 @@ private enum FeedbackSubmissionState {
 
 private enum FeedbackField: Hashable {
     case message
-    case contact
 }
