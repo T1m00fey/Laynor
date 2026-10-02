@@ -1,6 +1,30 @@
 import Foundation
 import SwiftUI
 
+enum SupportChatActivity {
+    private static let lock = NSLock()
+    private static var activeThreadID: UUID?
+
+    static func open(threadID: UUID) {
+        lock.withLock {
+            activeThreadID = threadID
+        }
+    }
+
+    static func close(threadID: UUID) {
+        lock.withLock {
+            if activeThreadID == threadID {
+                activeThreadID = nil
+            }
+        }
+    }
+
+    static func isOpen(threadID value: String) -> Bool {
+        guard let threadID = UUID(uuidString: value) else { return false }
+        return lock.withLock { activeThreadID == threadID }
+    }
+}
+
 private enum SupportStorage {
     static let appGroupId = "group.Tim.BudyAI"
     static let key = "laynor.support.threads.v1"
@@ -97,15 +121,19 @@ struct SupportThread: Codable, Hashable, Identifiable {
     var updatedAt: Date
     var isClosed: Bool
     var status: SupportThreadStatus
+    var serverUnreadSupportCount: Int?
+    var lastMessagePreview: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, category, subject, messages, createdAt, updatedAt, isClosed, status
+        case id, category, subject, messages, createdAt, updatedAt, isClosed, status, serverUnreadSupportCount, lastMessagePreview
     }
 
     init(
         id: UUID, category: SupportCategory, subject: String,
         messages: [SupportMessage], createdAt: Date, updatedAt: Date,
-        isClosed: Bool, status: SupportThreadStatus
+        isClosed: Bool, status: SupportThreadStatus,
+        serverUnreadSupportCount: Int? = nil,
+        lastMessagePreview: String? = nil
     ) {
         self.id = id
         self.category = category
@@ -115,6 +143,8 @@ struct SupportThread: Codable, Hashable, Identifiable {
         self.updatedAt = updatedAt
         self.isClosed = isClosed
         self.status = status
+        self.serverUnreadSupportCount = serverUnreadSupportCount
+        self.lastMessagePreview = lastMessagePreview
     }
 
     init(from decoder: Decoder) throws {
@@ -128,9 +158,54 @@ struct SupportThread: Codable, Hashable, Identifiable {
         isClosed = try values.decode(Bool.self, forKey: .isClosed)
         status = try values.decodeIfPresent(SupportThreadStatus.self, forKey: .status)
             ?? (isClosed ? .closed : .awaitingSupport)
+        serverUnreadSupportCount = try values.decodeIfPresent(Int.self, forKey: .serverUnreadSupportCount)
+        lastMessagePreview = try values.decodeIfPresent(String.self, forKey: .lastMessagePreview)
     }
 
     var lastMessage: SupportMessage? { messages.last }
+
+    var unreadSupportMessageCount: Int {
+        if let serverUnreadSupportCount { return serverUnreadSupportCount }
+        return messages.reduce(into: 0) { count, message in
+            if message.author == .support, message.deliveryState != .read {
+                count += 1
+            }
+        }
+    }
+}
+
+private struct SupportThreadSummary: Decodable {
+    let id: String
+    let subject: String
+    let category: String
+    let status: String
+    let lastMessagePreview: String
+    let lastMessageAuthor: String
+    let createdAt: String
+    let updatedAt: String
+    let unreadForUserCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case id, subject, category, status, lastMessagePreview, lastMessageAuthor
+        case createdAt, updatedAt, unreadForUserCount
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        subject = try values.decodeIfPresent(String.self, forKey: .subject) ?? ""
+        category = try values.decodeIfPresent(String.self, forKey: .category) ?? "other"
+        status = try values.decodeIfPresent(String.self, forKey: .status) ?? "awaiting_support"
+        lastMessagePreview = try values.decodeIfPresent(String.self, forKey: .lastMessagePreview) ?? ""
+        lastMessageAuthor = try values.decodeIfPresent(String.self, forKey: .lastMessageAuthor) ?? "user"
+        createdAt = try values.decodeIfPresent(String.self, forKey: .createdAt) ?? ""
+        updatedAt = try values.decodeIfPresent(String.self, forKey: .updatedAt) ?? createdAt
+        unreadForUserCount = try values.decodeIfPresent(Int.self, forKey: .unreadForUserCount) ?? 0
+    }
+}
+
+private struct SupportUserListResponse: Decodable {
+    let threads: [SupportThreadSummary]
 }
 
 struct SupportSyncMessage: Decodable {
@@ -144,6 +219,17 @@ private struct SupportSyncResponse: Decodable {
     let messages: [SupportSyncMessage]
     let readMessageIds: [String]
     let status: String
+
+    private enum CodingKeys: String, CodingKey {
+        case messages, readMessageIds, status
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        messages = try values.decodeIfPresent([SupportSyncMessage].self, forKey: .messages) ?? []
+        readMessageIds = try values.decodeIfPresent([String].self, forKey: .readMessageIds) ?? []
+        status = try values.decodeIfPresent(String.self, forKey: .status) ?? "awaiting_support"
+    }
 }
 
 private struct SupportMarkReadRequest: Encodable {
@@ -172,6 +258,7 @@ private actor SupportSyncCoordinator {
         defer { inFlight[threadID] = nil }
         try await task.value
     }
+
 }
 
 enum SupportStore {
@@ -318,7 +405,53 @@ enum SupportStore {
             if let lastDate = threads[threadIndex].messages.last?.createdAt {
                 threads[threadIndex].updatedAt = lastDate
             }
+            threads[threadIndex].lastMessagePreview = threads[threadIndex].messages.last?.text
+            threads[threadIndex].serverUnreadSupportCount = threads[threadIndex].messages.reduce(into: 0) { count, message in
+                if message.author == .support && message.deliveryState != .read { count += 1 }
+            }
             save(threads)
+        }
+        notifyChange()
+    }
+
+    fileprivate static func applySummaries(_ summaries: [SupportThreadSummary]) {
+        let iso = ISO8601DateFormatter()
+        lock.withLock {
+            var threads = load()
+            let existingByID = Dictionary(uniqueKeysWithValues: threads.map { ($0.id, $0) })
+            var updated = summaries.compactMap { summary -> SupportThread? in
+                guard let id = UUID(uuidString: summary.id) else { return nil }
+                let old = existingByID[id]
+                let status = SupportThreadStatus(
+                    serverValue: summary.status,
+                    isClosed: summary.status == SupportThreadStatus.closed.rawValue
+                )
+                let createdAt = iso.date(from: summary.createdAt) ?? old?.createdAt ?? Date()
+                let updatedAt = iso.date(from: summary.updatedAt) ?? old?.updatedAt ?? createdAt
+                return SupportThread(
+                    id: id,
+                    category: SupportCategory(rawValue: summary.category) ?? old?.category ?? .other,
+                    subject: summary.subject.isEmpty ? (old?.subject ?? "") : summary.subject,
+                    messages: old?.messages ?? [],
+                    createdAt: createdAt,
+                    updatedAt: updatedAt,
+                    isClosed: status == .closed,
+                    status: status,
+                    serverUnreadSupportCount: summary.unreadForUserCount,
+                    lastMessagePreview: summary.lastMessagePreview
+                )
+            }
+            let returnedIDs = Set(updated.map(\.id))
+            updated.append(contentsOf: existingByID.values.filter { thread in
+                !returnedIDs.contains(thread.id)
+                    && thread.messages.contains {
+                        $0.deliveryState == .pending
+                            || $0.deliveryState == .sending
+                            || $0.deliveryState == .failed
+                    }
+            })
+            threads = updated
+            save(updated)
         }
         notifyChange()
     }
@@ -364,6 +497,7 @@ enum SupportStore {
                 didChange = true
             }
             guard didChange else { return }
+            threads[threadIndex].serverUnreadSupportCount = 0
             save(threads)
         }
         if didChange { notifyChange() }
@@ -439,6 +573,50 @@ struct SupportRemoteService {
         try await SupportSyncCoordinator.shared.sync(threadID: threadID)
     }
 
+    func close(threadID: UUID) async throws {
+        guard let url = URL(string: BudyConfiguration.feedbackURL) else {
+            throw FeedbackError.invalidURL
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(BudyConfiguration.clientKey, forHTTPHeaderField: "X-Budy-Client")
+        request.timeoutInterval = 15
+        request.httpBody = try JSONEncoder().encode(SupportUserCloseRequest(
+            threadId: threadID.uuidString.lowercased(),
+            installationId: LaynorInstallation.identifier
+        ))
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw FeedbackError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let backendError = try? JSONDecoder().decode(SupportErrorResponse.self, from: data)
+            throw FeedbackError.api(backendError?.error ?? "feedback.error.generic".localizedString())
+        }
+    }
+
+    func listThreads() async throws {
+        guard let url = URL(string: BudyConfiguration.feedbackURL) else { throw FeedbackError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(BudyConfiguration.clientKey, forHTTPHeaderField: "X-Budy-Client")
+        request.timeoutInterval = 15
+        request.httpBody = try JSONEncoder().encode(SupportUserListRequest(
+            installationId: LaynorInstallation.identifier
+        ))
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw FeedbackError.invalidResponse
+        }
+        let value = try JSONDecoder().decode(SupportUserListResponse.self, from: data)
+        SupportStore.applySummaries(value.threads)
+    }
+
     fileprivate func performSync(threadID: UUID) async throws {
         guard let url = URL(string: BudyConfiguration.feedbackURL) else {
             throw FeedbackError.invalidURL
@@ -452,7 +630,7 @@ struct SupportRemoteService {
         request.timeoutInterval = 15
         request.httpBody = try JSONEncoder().encode(
             SupportSyncRequest(
-                action: "sync",
+                action: "support_thread",
                 threadId: threadID.uuidString.lowercased(),
                 installationId: LaynorInstallation.identifier
             )
@@ -512,6 +690,17 @@ private struct SupportSyncRequest: Encodable {
     let installationId: String
 }
 
+private struct SupportUserListRequest: Encodable {
+    let action = "support_user_list"
+    let installationId: String
+}
+
+private struct SupportUserCloseRequest: Encodable {
+    let action = "support_user_close"
+    let threadId: String
+    let installationId: String
+}
+
 private struct SupportRequest: Encodable {
     let type: String
     let message: String
@@ -531,7 +720,8 @@ private struct SupportErrorResponse: Decodable {
 }
 
 struct SupportView: View {
-    @AppStorage("laynor.support.access.granted") private var isSupportMode = false
+    @Binding var unreadCount: Int
+    @AppStorage("laynor.support.access.granted")  private var isSupportMode = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var threads: [SupportThread] = []
     @State private var isSyncing = false
@@ -540,7 +730,7 @@ struct SupportView: View {
     var body: some View {
         Group {
             if isSupportMode {
-                SupportOperatorInboxView()
+                SupportOperatorInboxView(unreadCount: $unreadCount)
             } else {
                 userSupportView
             }
@@ -593,10 +783,18 @@ struct SupportView: View {
         .onReceive(NotificationCenter.default.publisher(for: .laynorSupportDidChange)) { _ in
             refresh()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .laynorSupportPushReceived)) { notification in
+            if let value = notification.userInfo?["threadId"] as? String,
+               let id = UUID(uuidString: value) {
+                Task { try? await SupportRemoteService().sync(threadID: id); refresh() }
+            } else {
+                Task { await syncThreads() }
+            }
+        }
         .task {
             await syncThreads()
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(30))
                 guard !Task.isCancelled else { return }
                 await syncThreads()
             }
@@ -651,14 +849,7 @@ struct SupportView: View {
         isSyncing = true
         defer { isSyncing = false }
 
-        let threadIDs = SupportStore.allThreads().map(\.id)
-        await withTaskGroup(of: Void.self) { group in
-            for threadID in threadIDs {
-                group.addTask {
-                    try? await SupportRemoteService().sync(threadID: threadID)
-                }
-            }
-        }
+        try? await SupportRemoteService().listThreads()
         guard !Task.isCancelled else { return }
         refresh()
     }
@@ -675,33 +866,53 @@ private struct SupportThreadRow: View {
                 .frame(width: 38, height: 38)
                 .background(BudyTheme.accentSoft, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(thread.subject)
                         .font(.system(size: 16, weight: .semibold, design: .rounded))
                         .foregroundStyle(BudyTheme.ink)
                         .lineLimit(1)
-                    Spacer(minLength: 3)
+
+                    Text(thread.lastMessage?.text ?? thread.lastMessagePreview ?? "")
+                        .font(.system(size: 13))
+                        .foregroundStyle(BudyTheme.secondaryInk)
+                        .lineLimit(2)
+
+                    Text(thread.category.title)
+                        .foregroundStyle(BudyTheme.secondaryInk)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(thread.status.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(thread.status.color)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+
                     Text(thread.updatedAt, style: .date)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(BudyTheme.secondaryInk)
-                }
 
-                Text(thread.lastMessage?.text ?? "")
-                    .font(.system(size: 13))
-                    .foregroundStyle(BudyTheme.secondaryInk)
-                    .lineLimit(2)
-
-                HStack(spacing: 5) {
-                    Text(thread.category.title)
-                        .foregroundStyle(BudyTheme.secondaryInk)
-                    Text("•")
-                        .foregroundStyle(BudyTheme.secondaryInk)
-                    Text(thread.status.title)
-                        .foregroundStyle(thread.status.color)
+                    if thread.unreadSupportMessageCount > 0 {
+                        Text("\(thread.unreadSupportMessageCount)")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(BudyTheme.accentDark)
+                            .frame(minWidth: 24, minHeight: 24)
+                            .background(
+                                Circle().fill(BudyTheme.accent.opacity(0.16))
+                            )
+                            .accessibilityLabel(
+                                "\(thread.unreadSupportMessageCount) unread messages"
+                            )
+                    }
                 }
-                .font(.system(size: 11, weight: .semibold))
+                .frame(minWidth: 76, alignment: .trailing)
             }
+            .frame(maxWidth: .infinity)
         }
         .padding(.vertical, 5)
     }
@@ -715,6 +926,8 @@ private struct SupportThreadView: View {
     @State private var draft = ""
     @State private var isSending = false
     @State private var isSyncing = false
+    @State private var isClosing = false
+    @State private var hasShownInitialMessages = false
     @State private var errorMessage = ""
     @State private var showsError = false
 
@@ -724,7 +937,7 @@ private struct SupportThreadView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 10) {
-                            ForEach(thread.messages) { message in
+                            ForEach(Array(thread.messages.enumerated()), id: \.element.id) { index, message in
                                 SupportMessageBubble(
                                     message: message,
                                     onRetry: message.deliveryState == .failed
@@ -740,7 +953,30 @@ private struct SupportThreadView: View {
                                                     .combined(with: .opacity),
                                                 removal: .opacity
                                             )
-                                            : .opacity
+                                            : .asymmetric(
+                                                insertion: .offset(x: -30, y: 24)
+                                                    .combined(with: .scale(scale: 0.82, anchor: .bottomLeading))
+                                                    .combined(with: .opacity),
+                                                removal: .opacity
+                                            )
+                                    )
+                                    .opacity(hasShownInitialMessages ? 1 : 0)
+                                    .offset(
+                                        x: hasShownInitialMessages
+                                            ? 0
+                                            : (message.author == .user ? 30 : -30),
+                                        y: hasShownInitialMessages ? 0 : 24
+                                    )
+                                    .scaleEffect(
+                                        hasShownInitialMessages ? 1 : 0.82,
+                                        anchor: message.author == .user
+                                            ? .bottomTrailing
+                                            : .bottomLeading
+                                    )
+                                    .animation(
+                                        .spring(response: 0.36, dampingFraction: 0.82)
+                                            .delay(min(Double(index) * 0.04, 0.45)),
+                                        value: hasShownInitialMessages
                                     )
                             }
                         }
@@ -808,25 +1044,41 @@ private struct SupportThreadView: View {
             if thread?.isClosed == false {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("support.close".localizedString()) {
-                        SupportStore.close(threadID: threadID)
+                        closeThread()
                     }
                     .font(.system(size: 13, weight: .semibold))
+                    .disabled(isClosing || isSending)
                 }
             }
         }
-        .onAppear(perform: refresh)
+        .onAppear {
+            SupportChatActivity.open(threadID: threadID)
+            refresh()
+        }
+        .onDisappear {
+            SupportChatActivity.close(threadID: threadID)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .laynorSupportDidChange)) { _ in
             refresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .laynorSupportPushReceived)) { notification in
+            guard let pushedID = notification.userInfo?["threadId"] as? String,
+                  UUID(uuidString: pushedID) == threadID else { return }
+            Task { await syncAndMarkRead() }
         }
         .task(id: threadID) {
             while !Task.isCancelled {
                 await syncAndMarkRead()
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(8))
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            Task { await syncAndMarkRead() }
+            if phase == .active {
+                SupportChatActivity.open(threadID: threadID)
+                Task { await syncAndMarkRead() }
+            } else {
+                SupportChatActivity.close(threadID: threadID)
+            }
         }
         .alert("support.error.title".localizedString(), isPresented: $showsError) {
             Button("common.ok".localizedString(), role: .cancel) {}
@@ -843,6 +1095,14 @@ private struct SupportThreadView: View {
         guard canSend, let thread else { return }
         guard let message = SupportStore.appendMessage(threadID: thread.id, text: draft) else { return }
         draft = ""
+
+        // Update the local conversation immediately so the outgoing bubble
+        // gets its insertion transition before the network request starts.
+        if let updatedThread = SupportStore.thread(id: thread.id) {
+            withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
+                self.thread = updatedThread
+            }
+        }
         send(thread: thread, message: message)
     }
 
@@ -863,7 +1123,23 @@ private struct SupportThreadView: View {
         }
     }
 
+    private func closeThread() {
+        guard !isClosing else { return }
+        isClosing = true
+        Task {
+            do {
+                try await SupportRemoteService().close(threadID: threadID)
+                SupportStore.close(threadID: threadID)
+            } catch {
+                errorMessage = error.localizedDescription
+                showsError = true
+            }
+            isClosing = false
+        }
+    }
+
     private func refresh() {
+        let hadThread = thread != nil
         let updatedThread = SupportStore.thread(id: threadID)
         let shouldAnimateInsertion = thread != nil
             && (updatedThread?.messages.count ?? 0) > (thread?.messages.count ?? 0)
@@ -874,6 +1150,19 @@ private struct SupportThreadView: View {
             }
         } else {
             thread = updatedThread
+        }
+
+        if !hadThread, updatedThread != nil {
+            revealInitialMessages()
+        }
+    }
+
+    private func revealInitialMessages() {
+        guard !hasShownInitialMessages else { return }
+        DispatchQueue.main.async {
+            withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) {
+                hasShownInitialMessages = true
+            }
         }
     }
 
@@ -896,6 +1185,11 @@ private struct SupportThreadView: View {
             return
         }
 
+        // The store posts a notification, but refresh explicitly as well:
+        // notifications can be coalesced during a navigation transition.
+        await MainActor.run {
+            refresh()
+        }
         await markReadIfNeeded(using: service)
     }
 
@@ -1206,6 +1500,7 @@ private struct NewSupportThreadView: View {
 
 extension Notification.Name {
     static let laynorSupportDidChange = Notification.Name("laynor.support.didChange")
+    static let laynorSupportPushReceived = Notification.Name("laynor.support.pushReceived")
     static let laynorOpenSupportOperator = Notification.Name("laynor.support.openOperator")
     static let laynorOpenSupport = Notification.Name("laynor.support.open")
 }

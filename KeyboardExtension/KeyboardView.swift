@@ -236,8 +236,18 @@ struct BudyKeyboardView: View {
 
             if isShowingSavedItems {
                 SavedItemsKeyboardView(
-                    onClose: { isShowingSavedItems = false },
+                    onClose: {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                            isShowingSavedItems = false
+                        }
+                    },
                     onInsert: onInsertSavedItem
+                )
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .move(edge: .top).combined(with: .opacity)
+                    )
                 )
             }
         }
@@ -281,7 +291,11 @@ struct BudyKeyboardView: View {
                     onScheduleReminder: onScheduleReminder,
                     onUndo: onUndo,
                     onRedo: onRedo,
-                    onToggleSavedItems: { isShowingSavedItems = true }
+                    onToggleSavedItems: {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                            isShowingSavedItems = true
+                        }
+                    }
                 )
             }
         )
@@ -571,6 +585,7 @@ private struct SavedItemsKeyboardView: View {
     let onInsert: (LaynorSavedItem) -> Void
 
     @State private var items: [LaynorSavedItem] = []
+    @State private var isContentVisible = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -602,7 +617,7 @@ private struct SavedItemsKeyboardView: View {
                         columns: [GridItem(.adaptive(minimum: 145), spacing: 8)],
                         spacing: 8
                     ) {
-                        ForEach(items) { item in
+                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                             Button {
                                 LaynorSavedItemsStore.recordSelection(item)
                                 onInsert(item)
@@ -633,6 +648,15 @@ private struct SavedItemsKeyboardView: View {
                                 )
                             }
                             .buttonStyle(.plain)
+                            .environment(\.layoutDirection, .leftToRight)
+                            .opacity(isContentVisible ? 1 : 0)
+                            .offset(y: isContentVisible ? 0 : 9)
+                            .scaleEffect(isContentVisible ? 1 : 0.97)
+                            .animation(
+                                .spring(response: 0.34, dampingFraction: 0.84)
+                                    .delay(Double(index) * 0.035),
+                                value: isContentVisible
+                            )
                         }
                     }
                     .padding(.horizontal, 10)
@@ -642,7 +666,13 @@ private struct SavedItemsKeyboardView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .foregroundStyle(.primary)
-        .onAppear(perform: refresh)
+        .onAppear {
+            refresh()
+            isContentVisible = false
+            DispatchQueue.main.async {
+                isContentVisible = true
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .laynorSavedItemsDidChange)) { _ in
             refresh()
         }

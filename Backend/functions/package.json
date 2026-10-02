@@ -9,7 +9,7 @@
   "scripts": {
     "test": "node --test",
     "serve": "firebase emulators:start --only functions",
-    "deploy": "firebase deploy --only functions:budy:budyRewrite,functions:budy:budyFeedback,functions:budy:budyRegisterDevice,functions:budy:budyCreateReminder,functions:budy:budyListReminders,functions:budy:budyCancelReminder,functions:budy:budyDispatchReminders",
+    "deploy": "firebase deploy --only functions:budy:budyRewrite,functions:budy:budyFeedback,functions:budy:budyRegisterDevice,functions:budy:budyUnregisterSupportDevice,functions:budy:budyCreateReminder,functions:budy:budyListReminders,functions:budy:budyCancelReminder,functions:budy:budyDispatchReminders,functions:budy:budyCleanupClosedSupportThreads",
     "logs": "firebase functions:log --only budyRewrite"
   },
   "dependencies": {

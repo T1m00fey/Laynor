@@ -196,7 +196,10 @@ enum LaynorPersonalDictionary {
         let language = candidate.languageCode
         let source = normalizedWord(input, languageCode: language)
         let target = normalizedWord(candidate.word, languageCode: language)
-        guard source != target, abs(source.count - target.count) <= 1 else {
+        // A personal suggestion may complete a typo, but should not delete
+        // characters from an unknown token without an explicit tap.
+        guard source != target, target.count >= source.count,
+              abs(source.count - target.count) <= 1 else {
             return false
         }
         return editDistance(source, target) <= 1

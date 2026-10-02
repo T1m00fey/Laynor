@@ -17,7 +17,7 @@ function loadModuleForTests() {
     },
     require(moduleName) {
       if (moduleName === "firebase-functions") {
-        return { logger: { error() {}, warn() {} } };
+        return { logger: { error() {}, warn() {}, info() {} } };
       }
       if (moduleName === "firebase-functions/params") {
         return { defineSecret: () => ({ value: () => "test" }) };
@@ -45,18 +45,28 @@ function loadModuleForTests() {
           getFirestore: () => ({
             collection: (name) => ({
               add: async (document) => feedbackDocuments.push(document),
-              where: (field, operator, values) => ({
-                get: async () => ({
-                  docs: supportDocuments
-                    .filter((document) => operator === "in" && values.includes(document[field]))
-                    .map((document) => ({
-                      id: document.id,
-                      data: () => document,
-                    })),
-                }),
-              }),
+              where: (field, operator, values) => {
+                const query = {
+                  get: async () => ({
+                    docs: supportDocuments
+                      .filter((document) => operator === "in"
+                        ? values.includes(document[field])
+                        : operator === "==" && document[field] === values)
+                      .map((document) => ({
+                        id: document.id,
+                        data: () => document,
+                      })),
+                  }),
+                  limit: () => query,
+                };
+                return query;
+              },
               doc: (id) => ({
                 set: async (document) => supportDocuments.push({ id, ...document }),
+                delete: async () => {
+                  const index = supportDocuments.findLastIndex((document) => document.id === id);
+                  if (index >= 0) supportDocuments.splice(index, 1);
+                },
                 get: async () => {
                   const document = [...supportDocuments].reverse().find((item) => item.id === id);
                   return {
@@ -337,6 +347,46 @@ test("lists only open support threads for an authenticated operator", async () =
     responseBody.threads.some((thread) => thread.subject === "Закрытое обращение"),
     false,
   );
+  assert.equal(Object.hasOwn(responseBody.threads[0], "messages"), false);
+});
+
+test("lists user support threads with summaries only", async () => {
+  const installationId = "12121212-1212-4121-8121-121212121212";
+  moduleContext.supportDocuments.push({
+    id: "13131313-1313-4131-8131-131313131313",
+    installationId,
+    subject: "Синхронизация",
+    category: "issue",
+    status: "awaiting_user",
+    messages: [{
+      id: "14141414-1414-4141-8141-141414141414",
+      author: "support",
+      text: "Готово",
+      createdAt: "2026-08-20T10:00:00.000Z",
+    }],
+    readMessageIds: [],
+    createdAt: "2026-08-20T09:00:00.000Z",
+    updatedAt: "2026-08-20T10:00:00.000Z",
+  });
+  let statusCode = 0;
+  let responseBody;
+  const response = {
+    set() { return this; },
+    status(code) { statusCode = code; return this; },
+    json(value) { responseBody = value; return this; },
+  };
+  const request = {
+    method: "POST",
+    body: { action: "support_user_list", installationId },
+    get(name) {
+      return name === "x-budy-client" ? "8e20f7353e04590aa7e550840116ac322eaa30bda8e28c39" : undefined;
+    },
+  };
+  await moduleContext.exports.budyFeedback(request, response);
+  assert.equal(statusCode, 200);
+  assert.equal(responseBody.threads[0].subject, "Синхронизация");
+  assert.equal(responseBody.threads[0].unreadForUserCount, 1);
+  assert.equal(Object.hasOwn(responseBody.threads[0], "messages"), false);
 });
 
 test("moves a thread to in progress after a support reply", async () => {
@@ -450,6 +500,79 @@ test("closes a support thread", async () => {
 
   assert.equal(statusCode, 200);
   assert.equal(moduleContext.supportDocuments.at(-1).status, "closed");
+  assert.equal(moduleContext.supportDocuments.at(-1).closedAt, "server-timestamp");
+});
+
+test("allows the owning user to close a support thread", async () => {
+  const threadId = "edededed-eded-4ede-8ede-edededededed";
+  const installationId = "fefefefe-fefe-4efe-8efe-fefefefefefe";
+  moduleContext.supportDocuments.push({
+    id: threadId,
+    installationId,
+    status: "awaiting_support",
+    messages: [],
+  });
+
+  let statusCode = 0;
+  const response = {
+    set() { return this; },
+    status(code) { statusCode = code; return this; },
+    json() { return this; },
+  };
+  const request = {
+    method: "POST",
+    body: {
+      action: "support_user_close",
+      threadId,
+      installationId,
+    },
+    get(name) {
+      return name === "x-budy-client" ? "8e20f7353e04590aa7e550840116ac322eaa30bda8e28c39" : undefined;
+    },
+  };
+
+  await moduleContext.exports.budyFeedback(request, response);
+
+  assert.equal(statusCode, 200);
+  assert.equal(moduleContext.supportDocuments.at(-1).status, "closed");
+  assert.equal(moduleContext.supportDocuments.at(-1).closedAt, "server-timestamp");
+});
+
+test("cleans up only closed support threads older than fourteen days", async () => {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1_000;
+  moduleContext.supportDocuments.push(
+    {
+      id: "old-closed-thread",
+      status: "closed",
+      closedAt: new Date(now - 15 * day).toISOString(),
+    },
+    {
+      id: "recent-closed-thread",
+      status: "closed",
+      closedAt: new Date(now - 13 * day).toISOString(),
+    },
+    {
+      id: "open-thread",
+      status: "awaiting_support",
+      updatedAt: "2026-01-01T10:00:00.000Z",
+    },
+  );
+
+  await moduleContext.exports.budyCleanupClosedSupportThreads();
+
+  assert.equal(
+    moduleContext.supportDocuments.some((document) => document.id === "old-closed-thread"),
+    false,
+  );
+  assert.equal(
+    moduleContext.supportDocuments.some((document) => document.id === "recent-closed-thread"),
+    true,
+  );
+  assert.equal(
+    moduleContext.supportDocuments.some((document) => document.id === "open-thread"),
+    true,
+  );
 });
 
 test("accepts a valid future reminder response", () => {
@@ -508,4 +631,68 @@ test("uses the Laynor title for an at-time reminder", () => {
     }).title,
     "Laynor напоминает",
   );
+});
+
+test("unregisters a support push device", async () => {
+  const installationId = "abababab-abab-4aba-8aba-abababababab";
+  moduleContext.supportDocuments.push({
+    id: installationId,
+    fcmToken: "support-token",
+    role: "support",
+  });
+
+  let statusCode = 0;
+  let responseBody;
+  const response = {
+    set() { return this; },
+    status(code) { statusCode = code; return this; },
+    json(value) { responseBody = value; return this; },
+  };
+  const request = {
+    method: "POST",
+    body: { installationId },
+    get(name) {
+      return name === "x-budy-client" ? "8e20f7353e04590aa7e550840116ac322eaa30bda8e28c39" : undefined;
+    },
+  };
+
+  await moduleContext.exports.budyUnregisterSupportDevice(request, response);
+
+  assert.equal(statusCode, 200);
+  assert.equal(responseBody.ok, true);
+  assert.equal(moduleContext.supportDocuments.some((document) => document.id === installationId), false);
+});
+
+test("clears a stale support device when registering as a user", async () => {
+  const installationId = "abababab-abab-4aba-8aba-abababababab";
+  moduleContext.supportDocuments.push({
+    id: installationId,
+    fcmToken: "old-support-token",
+    role: "support",
+    supportCode: "2468",
+  });
+
+  let statusCode = 0;
+  const response = {
+    set() { return this; },
+    status(code) { statusCode = code; return this; },
+    json() { return this; },
+  };
+  const request = {
+    method: "POST",
+    body: {
+      installationId,
+      fcmToken: "new-user-device-token-long-enough",
+    },
+    get(name) {
+      return name === "x-budy-client" ? "8e20f7353e04590aa7e550840116ac322eaa30bda8e28c39" : undefined;
+    },
+  };
+
+  await moduleContext.exports.budyRegisterDevice(request, response);
+
+  assert.equal(statusCode, 200);
+  assert.equal(moduleContext.supportDocuments.some((document) =>
+    document.id === installationId && document.role === "support"), false);
+  assert.equal(moduleContext.supportDocuments.at(-1).role, "user");
 });

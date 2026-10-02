@@ -93,6 +93,7 @@ struct SupportAccessView: View {
     @State private var isLoading = false
     @State private var errorMessage = ""
     @State private var showsError = false
+    @State private var showsSuccess = false
 
     var body: some View {
         NavigationStack {
@@ -104,9 +105,12 @@ struct SupportAccessView: View {
                     Text("support.access.role".localizedString() + ": " + role)
                         .foregroundStyle(BudyTheme.secondaryInk)
                     Button("support.access.logout".localizedString()) {
-                        accessGranted = false
-                        SupportAccessSession.revoke()
-                        dismiss()
+                        Task {
+                            try? await LaynorPushService.unregisterSupportDevice()
+                            accessGranted = false
+                            SupportAccessSession.revoke()
+                            dismiss()
+                        }
                     }
                 } else {
                     Text("support.access.subtitle".localizedString())
@@ -148,6 +152,13 @@ struct SupportAccessView: View {
         .alert("support.access.error.title".localizedString(), isPresented: $showsError) {
             Button("common.ok".localizedString(), role: .cancel) {}
         } message: { Text(errorMessage) }
+        .alert("support.access.success.title".localizedString(), isPresented: $showsSuccess) {
+            Button("common.continue".localizedString()) {
+                openSupportInbox()
+            }
+        } message: {
+            Text("support.access.success.subtitle".localizedString())
+        }
     }
 
     private func authenticate() {
@@ -156,12 +167,17 @@ struct SupportAccessView: View {
             do {
                 role = try await SupportAccessService().authenticate(code: code)
                 SupportAccessSession.grant(code: code)
+                try? await LaynorPushService.registerSupportDevice(code: code)
                 accessGranted = true
-                NotificationCenter.default.post(name: .laynorOpenSupportOperator, object: nil)
-                dismiss()
+                showsSuccess = true
             }
             catch { errorMessage = error.localizedDescription; showsError = true }
             isLoading = false
         }
+    }
+
+    private func openSupportInbox() {
+        NotificationCenter.default.post(name: .laynorOpenSupportOperator, object: nil)
+        dismiss()
     }
 }

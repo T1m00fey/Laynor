@@ -316,7 +316,11 @@ final class KeyboardViewController: KeyboardInputViewController {
 
         state.autocompleteContext.settings.isAutocompleteEnabled = true
         state.autocompleteContext.settings.isAutocorrectEnabled = true
-        state.autocompleteContext.settings.isAutoIgnoreEnabled = true
+        // Unknown words must remain in the document without requiring a tap
+        // on the suggestion row. Auto-ignore is not useful with our service
+        // (it deliberately does not expose an ignore list) and can make an
+        // unfamiliar token look like it was rejected by autocomplete.
+        state.autocompleteContext.settings.isAutoIgnoreEnabled = false
         state.autocompleteContext.settings.isToolbarEnabled = true
         // Inline next-character prediction is expensive and isn't used by our
         // toolbar. Keep word completion and next-word suggestions.
@@ -369,6 +373,9 @@ final class KeyboardViewController: KeyboardInputViewController {
                 locale: context.locale
             )
             services.autocompleteService = autocompleteService
+            if let actionHandler = services.actionHandler as? BudyKeyboardActionHandler {
+                actionHandler.updateAutocompleteService(autocompleteService)
+            }
             requestSupplementaryLexicon { lexicon in
                 autocompleteService.registerLexicon(lexicon)
             }
@@ -410,6 +417,10 @@ nonisolated private final class BudyKeyboardActionHandler: StandardKeyboardActio
         )
     }
 
+    func updateAutocompleteService(_ service: AutocompleteService) {
+        autocompleteService = service
+    }
+
     override func handle(_ action: KeyboardAction) {
         if action == .budyLocaleSwitch {
             super.handle(.nextLocale)
@@ -436,7 +447,7 @@ nonisolated private final class BudyKeyboardActionHandler: StandardKeyboardActio
                 locale: keyboardContext.locale
             ) == .orderedSame
 
-        if suggestion.isRegular, selectedCurrentWord {
+        if (suggestion.isRegular || suggestion.isUnknown), selectedCurrentWord {
             LaynorPersonalDictionary.learn(
                 currentWord,
                 languageCode: languageCode
@@ -507,6 +518,13 @@ nonisolated private final class BudyKeyboardActionHandler: StandardKeyboardActio
         before gesture: Keyboard.Gesture,
         on action: KeyboardAction
     ) -> Bool {
+        // A character key must always insert the character the user pressed.
+        // Apply a correction only when the user commits the current word with
+        // a real word boundary (space, return, tab or punctuation).
+        guard BudyAutocorrectionPolicy.isWordBoundary(action) else {
+            return false
+        }
+
         guard BudyAutocorrectionPolicy.allowsAutocorrect(
             inputType: keyboardContext.keyboardInputType,
             textBeforeCursor: currentDocumentContextBeforeInput,
@@ -515,11 +533,11 @@ nonisolated private final class BudyKeyboardActionHandler: StandardKeyboardActio
             return false
         }
 
-        if let suggestion = autocompleteContext.suggestions.first(where: \.isAutocorrect),
-           !BudyAutocorrectionPolicy.isConfidentCorrection(
-                suggestion.text,
-                forTextBeforeCursor: currentDocumentContextBeforeInput
-           ) {
+        guard let suggestion = autocompleteContext.suggestions.first(where: \.isAutocorrect),
+              BudyAutocorrectionPolicy.isConfidentCorrection(
+                  suggestion.text,
+                  forTextBeforeCursor: currentDocumentContextBeforeInput
+              ) else {
             return false
         }
 
@@ -530,6 +548,10 @@ nonisolated private final class BudyKeyboardActionHandler: StandardKeyboardActio
         after gesture: Keyboard.Gesture,
         on action: KeyboardAction
     ) -> Bool {
+        // Keep recalculating suggestions while the word is being typed. The
+        // boundary check belongs to autocorrection above: autocomplete is a
+        // visual aid and must not be disabled just because the current key is
+        // a letter.
         guard BudyAutocorrectionPolicy.allowsAutocomplete(
             inputType: keyboardContext.keyboardInputType,
             textBeforeCursor: currentDocumentContextBeforeInput
@@ -629,6 +651,21 @@ nonisolated private enum BudyAutocorrectionPolicy {
         return true
     }
 
+    static func isWordBoundary(_ action: KeyboardAction) -> Bool {
+        switch action {
+        case .space, .tab, .primary:
+            return true
+        case .character(let value), .characterMargin(let value), .text(let value):
+            // Punctuation commits the preceding word; letters, digits and
+            // combining marks are still part of the word being typed.
+            return value.unicodeScalars.contains { scalar in
+                !CharacterSet.alphanumerics.contains(scalar)
+            }
+        default:
+            return false
+        }
+    }
+
     static func isConfidentCorrection(
         _ correction: String,
         forTextBeforeCursor textBeforeCursor: String?
@@ -641,6 +678,12 @@ nonisolated private enum BudyAutocorrectionPolicy {
         let source = word.lowercased()
         let target = candidate.lowercased()
         guard source != target else { return false }
+
+        // Do not silently shorten a token that the user just entered. This
+        // is the important distinction for names, slang and unknown words:
+        // Apple keeps a token like "итмо" intact and only marks it as
+        // misspelled instead of turning it into the shorter "ито".
+        guard target.count >= source.count else { return false }
 
         let maximumDistance: Int
         switch source.count {
@@ -843,7 +886,11 @@ nonisolated private final class BudyAutocompleteService: AutocompleteService {
         var result = [
             AutocompleteSuggestion(
                 text: word,
-                type: .regular,
+                // Unknown tells KeyboardKit that this is the user's raw
+                // token, not a replacement which has to be accepted. It is
+                // still shown as the first candidate so tapping it can learn
+                // the word, matching Apple's keyboard behavior.
+                type: misspelled ? .unknown : .regular,
                 title: "«\(word)»"
             )
         ]

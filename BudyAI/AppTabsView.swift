@@ -3,6 +3,7 @@ import UIKit
 
 struct ContentView: View {
     @State private var selectedTab: AppTab = .home
+    @State private var unreadSupportCount = 0
     
 
     var body: some View {
@@ -25,12 +26,15 @@ struct ContentView: View {
                     )
                 }
 
-            SupportView()
+            SupportView(unreadCount: $unreadSupportCount)
                 .tag(AppTab.support)
+                .badge(unreadSupportCount > 0 ? unreadSupportCount : 0)
                 .tabItem {
                     Label(
                         "tab.support".localizedString(),
-                        systemImage: selectedTab == .support ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right"
+                        systemImage: selectedTab == .support
+                            ? "bubble.left.and.bubble.right.fill"
+                            : "bubble.left.and.bubble.right"
                     )
                 }
 
@@ -50,6 +54,18 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .laynorOpenSupport)) { _ in
             selectedTab = .support
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .laynorSupportDidChange)) { _ in
+            refreshUnreadSupportCount()
+        }
+        .onAppear {
+            refreshUnreadSupportCount()
+        }
+    }
+
+    private func refreshUnreadSupportCount() {
+        unreadSupportCount = SupportStore.allThreads().reduce(0) {
+            $0 + $1.unreadSupportMessageCount
         }
     }
 }

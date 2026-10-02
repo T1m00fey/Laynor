@@ -231,7 +231,7 @@
 "support.category.question" = "Pregunta";
 "support.category.suggestion" = "Sugerencia";
 "support.category.other" = "Otro";
-"support.subject.placeholder" = "Describe brevemente el problema";
+"support.subject.placeholder" = "Título de la solicitud";
 "support.message.placeholder" = "Cuéntanos más";
 "support.reply.placeholder" = "Escribe un mensaje";
 "support.close" = "Cerrar";
@@ -255,6 +255,8 @@
 "support.access.error.url" = "Falta la URL del servicio";
 "support.access.error.response" = "El servicio no está disponible";
 "support.access.error.denied" = "Código no válido";
+"support.access.success.title" = "Has iniciado sesión";
+"support.access.success.subtitle" = "El acceso de soporte ya está activo.";
 "support.operator.title" = "Solicitudes";
 "support.operator.empty.title" = "No hay solicitudes abiertas";
 "support.operator.empty.subtitle" = "Todas las solicitudes de usuarios están cerradas.";

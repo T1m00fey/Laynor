@@ -199,20 +199,20 @@
 
 "dictionary.section.title" = "Раздел словаря";
 "dictionary.section.t9" = "T9";
-"dictionary.section.saved" = "Сохранёнки";
+"dictionary.section.saved" = "Сохранённое";
 "dictionary.saved.search" = "Поиск сохранённого";
 "dictionary.saved.empty.title" = "Пока ничего нет";
 "dictionary.saved.empty.subtitle" = "Добавьте слова, почты, номера и готовые фразы, чтобы вставлять их прямо с клавиатуры.";
-"dictionary.saved.add.title" = "Новая сохранёнка";
-"dictionary.saved.add" = "Добавить сохранёнку";
+"dictionary.saved.add.title" = "Новое сохранённое";
+"dictionary.saved.add" = "Добавить сохранённое";
 "dictionary.saved.title.placeholder" = "Название (необязательно)";
 "dictionary.saved.value.placeholder" = "Слово, почта, номер или фраза";
-"dictionary.saved.clear" = "Очистить сохранёнки";
-"dictionary.saved.clear.confirm.title" = "Очистить сохранёнки?";
-"dictionary.saved.clear.confirm.action" = "Удалить все сохранёнки";
+"dictionary.saved.clear" = "Очистить сохранённое";
+"dictionary.saved.clear.confirm.title" = "Очистить сохранённое?";
+"dictionary.saved.clear.confirm.action" = "Удалить всё сохранённое";
 "keyboard.saved.open" = "Открыть сохранённые данные";
 "keyboard.saved.close" = "Вернуться к клавиатуре";
-"keyboard.saved.title" = "Сохранёнки";
+"keyboard.saved.title" = "Сохранённое";
 "keyboard.saved.empty.title" = "Список пуст";
 "keyboard.saved.empty.subtitle" = "Добавьте записи в приложении во вкладке «Словарь».";
 
@@ -231,7 +231,7 @@
 "support.category.question" = "Вопрос";
 "support.category.suggestion" = "Предложение";
 "support.category.other" = "Другое";
-"support.subject.placeholder" = "Коротко опишите вопрос";
+"support.subject.placeholder" = "Заголовок обращения";
 "support.message.placeholder" = "Расскажите подробнее";
 "support.reply.placeholder" = "Написать сообщение";
 "support.close" = "Закрыть";
@@ -255,6 +255,8 @@
 "support.access.error.url" = "Не найден адрес сервиса";
 "support.access.error.response" = "Сервис временно недоступен";
 "support.access.error.denied" = "Неверный код доступа";
+"support.access.success.title" = "Авторизация выполнена";
+"support.access.success.subtitle" = "Доступ поддержки активирован.";
 "support.operator.title" = "Обращения";
 "support.operator.empty.title" = "Нет открытых обращений";
 "support.operator.empty.subtitle" = "Все обращения пользователей закрыты.";

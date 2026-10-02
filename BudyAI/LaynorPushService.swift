@@ -1,21 +1,63 @@
 import Foundation
+#if canImport(FirebaseMessaging)
+import FirebaseMessaging
+#endif
 
 enum LaynorPushService {
     private static let clientKey = "8e20f7353e04590aa7e550840116ac322eaa30bda8e28c39"
     private static let baseURL =
         "https://europe-west1-factorial-9c9f3.cloudfunctions.net"
 
-    static func registerDevice(fcmToken: String) async throws {
+    static func registerDevice(fcmToken: String, supportCode: String? = nil) async throws {
         try await post(
             path: "budyRegisterDevice",
             payload: RegisterDevicePayload(
                 installationId: LaynorInstallation.identifier,
                 fcmToken: fcmToken,
                 locale: Locale.autoupdatingCurrent.identifier,
-                timeZone: TimeZone.autoupdatingCurrent.identifier
+                timeZone: TimeZone.autoupdatingCurrent.identifier,
+                supportCode: supportCode
             )
         )
     }
+
+    static func unregisterSupportDevice() async throws {
+        try await post(
+            path: "budyUnregisterSupportDevice",
+            payload: UnregisterSupportDevicePayload(
+                installationId: LaynorInstallation.identifier
+            )
+        )
+    }
+
+#if canImport(FirebaseMessaging)
+    static func registerSupportDevice(code: String) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            Messaging.messaging().token { token, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let token, !token.isEmpty else {
+                    continuation.resume(throwing: PushServiceError.invalidResponse)
+                    return
+                }
+                Task {
+                    do {
+                        try await registerDevice(fcmToken: token, supportCode: code)
+                        continuation.resume()
+                    } catch {
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+        }
+    }
+#else
+    static func registerSupportDevice(code: String) async throws {
+        throw PushServiceError.invalidResponse
+    }
+#endif
 
     static func cancelReminder(id: UUID) async throws {
         try await post(
@@ -145,6 +187,11 @@ private struct RegisterDevicePayload: Encodable {
     let fcmToken: String
     let locale: String
     let timeZone: String
+    let supportCode: String?
+}
+
+private struct UnregisterSupportDevicePayload: Encodable {
+    let installationId: String
 }
 
 private struct CancelReminderPayload: Encodable {

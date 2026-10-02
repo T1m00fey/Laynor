@@ -231,7 +231,7 @@
 "support.category.question" = "Question";
 "support.category.suggestion" = "Suggestion";
 "support.category.other" = "Other";
-"support.subject.placeholder" = "Briefly describe the issue";
+"support.subject.placeholder" = "Request title";
 "support.message.placeholder" = "Tell us more";
 "support.reply.placeholder" = "Write a message";
 "support.close" = "Close";
@@ -255,6 +255,8 @@
 "support.access.error.url" = "Service URL is missing";
 "support.access.error.response" = "Service is temporarily unavailable";
 "support.access.error.denied" = "Invalid access code";
+"support.access.success.title" = "Signed in successfully";
+"support.access.success.subtitle" = "Support access is now active.";
 "support.operator.title" = "Requests";
 "support.operator.empty.title" = "No open requests";
 "support.operator.empty.subtitle" = "All user requests are closed.";

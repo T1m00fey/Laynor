@@ -32,8 +32,9 @@ final class LaynorAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
 #endif
 
         Task {
-            let status = await LaynorReminderCenter.authorizationStatus()
-            guard status == .authorized || status == .provisional || status == .ephemeral else {
+            do {
+                try await LaynorReminderCenter.requestAuthorizationIfNeeded()
+            } catch {
                 return
             }
             await MainActor.run {
@@ -47,7 +48,42 @@ final class LaynorAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        let userInfo = notification.request.content.userInfo
+        let isOpenChat = shouldSuppressSupportNotification(userInfo)
+        notifySupportIfNeeded(userInfo)
+        if isOpenChat {
+            return []
+        }
+        return UNNotificationPresentationOptions([.banner, .sound])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        notifySupportIfNeeded(response.notification.request.content.userInfo)
+    }
+
+    private func notifySupportIfNeeded(_ userInfo: [AnyHashable: Any]) {
+        let type = userInfo["type"] as? String
+        guard type == "support_reply" || type == "support_request" else { return }
+        let threadID = userInfo["threadId"] as? String
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .laynorSupportPushReceived,
+                object: nil,
+                userInfo: threadID.map { ["threadId": $0] }
+            )
+        }
+    }
+
+    private func shouldSuppressSupportNotification(_ userInfo: [AnyHashable: Any]) -> Bool {
+        let type = userInfo["type"] as? String
+        guard type == "support_reply" || type == "support_request",
+              let threadID = userInfo["threadId"] as? String else {
+            return false
+        }
+        return SupportChatActivity.isOpen(threadID: threadID)
     }
 
     func application(
@@ -64,7 +100,10 @@ final class LaynorAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificati
             guard let token, !token.isEmpty else { return }
             Task {
                 do {
-                    try await LaynorPushService.registerDevice(fcmToken: token)
+                    try await LaynorPushService.registerDevice(
+                        fcmToken: token,
+                        supportCode: SupportAccessSession.code
+                    )
                     await LaynorPushService.uploadPendingReminders()
                 } catch {
                     print("Push registration failed: \(error)")
@@ -84,7 +123,10 @@ extension LaynorAppDelegate: MessagingDelegate {
         guard let fcmToken, !fcmToken.isEmpty else { return }
         Task {
             do {
-                try await LaynorPushService.registerDevice(fcmToken: fcmToken)
+                try await LaynorPushService.registerDevice(
+                    fcmToken: fcmToken,
+                    supportCode: SupportAccessSession.code
+                )
                 await LaynorPushService.uploadPendingReminders()
             } catch {
                 print("Push registration failed: \(error)")
